@@ -241,7 +241,7 @@ export default function App() {
     color: '#EAF6F6', fontFamily: "'Space Grotesk', sans-serif",
   };
   const headline = { fontFamily: "'Fraunces', serif", fontWeight: 600 };
-  const fontStyle = `@import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=Space+Grotesk:wght@400;500;700&display=swap'); *{box-sizing:border-box;} body{margin:0;}`;
+  const fontStyle = `@import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Fraunces:wght@500;600&family=Space+Grotesk:wght@400;500;700&display=swap'); *{box-sizing:border-box;} body{margin:0;} @keyframes floatUp { 0%{transform:translateY(0);opacity:0} 10%{opacity:0.5} 100%{transform:translateY(-320px);opacity:0} }`;
 
   if (!authReady || !myId) {
     return <div style={{ ...pageStyle, display: 'flex', justifyContent: 'center' }}><div style={{ marginTop: 100, color: '#7FA6C2' }}>연결 중...</div></div>;
@@ -250,16 +250,41 @@ export default function App() {
   // ============ JOIN / LOBBY ============
   if (screen !== 'game' || !room || !room.started) {
     return (
-      <div style={{ ...pageStyle, padding: '24px 16px 40px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{
+        position: 'relative', minHeight: '100vh', overflow: 'hidden',
+        background: 'linear-gradient(180deg, #0a3a52 0%, #07293f 35%, #041824 70%, #020d15 100%)',
+        color: '#EAF6F6', fontFamily: "'Space Grotesk', sans-serif",
+        padding: '30px 16px 40px', display: 'flex', flexDirection: 'column', alignItems: 'center',
+      }}>
         <style>{fontStyle}</style>
-        <div style={{ width: '100%', maxWidth: 440 }}>
-          <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <div style={{ ...headline, fontSize: 30, letterSpacing: 0.5 }}>딥 씨 크루</div>
-            <div style={{ color: '#7FA6C2', fontSize: 13, marginTop: 4 }}>협동 트릭테이킹 · 캠페인</div>
+
+        {/* 수면 광선 */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '60%', pointerEvents: 'none', opacity: 0.35,
+          background: 'linear-gradient(100deg, transparent 20%, rgba(120,200,230,0.15) 30%, transparent 40%, rgba(120,200,230,0.12) 55%, transparent 65%, rgba(120,200,230,0.1) 78%, transparent 88%)' }} />
+        {/* 떠오르는 기포들 */}
+        {[...Array(14)].map((_, i) => {
+          const size = 4 + (i % 4) * 3;
+          const left = (i * 37) % 100;
+          const delay = (i % 7) * 1.3;
+          const dur = 7 + (i % 5) * 2;
+          return <div key={i} style={{ position: 'absolute', bottom: 0, left: `${left}%`, width: size, height: size, borderRadius: '50%',
+            background: 'rgba(160,220,240,0.4)', animation: `floatUp ${dur}s linear ${delay}s infinite`, pointerEvents: 'none' }} />;
+        })}
+
+        <div style={{ width: '100%', maxWidth: 440, position: 'relative', zIndex: 1 }}>
+          <div style={{ textAlign: 'center', marginBottom: 30 }}>
+            <div style={{
+              fontFamily: "'Black Han Sans', sans-serif", fontSize: 64, lineHeight: 0.95,
+              color: '#EAF6F6', letterSpacing: 1,
+              textShadow: '0 2px 0 #0a3a52, 0 4px 18px rgba(0,0,0,0.6), 0 0 30px rgba(80,180,220,0.4)',
+            }}>
+              딥 씨<br />크루
+            </div>
+            <div style={{ marginTop: 10, color: '#7FBEDA', fontSize: 15, letterSpacing: 6, fontWeight: 500 }}>심해에서의 임무</div>
           </div>
 
           {screen === 'join' && (
-            <div style={{ background: '#103552', borderRadius: 16, padding: 22, border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ background: 'rgba(11,42,69,0.85)', backdropFilter: 'blur(4px)', borderRadius: 16, padding: 22, border: '1px solid rgba(120,200,230,0.15)' }}>
               <label style={{ fontSize: 13, color: '#7FA6C2' }}>이름</label>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="닉네임"
                 style={{ width: '100%', marginTop: 6, marginBottom: 16, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: '#0B2A45', color: '#EAF6F6', outline: 'none' }} />
@@ -285,7 +310,7 @@ export default function App() {
           )}
 
           {screen === 'lobby' && room && (
-            <div style={{ background: '#103552', borderRadius: 16, padding: 22, border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ background: 'rgba(11,42,69,0.85)', backdropFilter: 'blur(4px)', borderRadius: 16, padding: 22, border: '1px solid rgba(120,200,230,0.15)' }}>
               <div style={{ textAlign: 'center', marginBottom: 18 }}>
                 <div style={{ color: '#7FA6C2', fontSize: 13 }}>방 코드</div>
                 <div style={{ ...headline, fontSize: 40, color: '#2FE6C7', letterSpacing: 4 }}>{roomCode}</div>
