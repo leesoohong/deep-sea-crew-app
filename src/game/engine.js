@@ -707,7 +707,7 @@ class Game {
       currentPlayerToAct: this.currentPlayerToAct(),
       nextLeader: this.nextLeader,
       handCounts: this.hands ? this.hands.map((h) => h.length) : null,
-      comm: this.comm,
+      comm: this.comm || {},
       missionResult: this.missionResult,
       lastTrickIndex: LAST_TRICK_INDEX[this.numPlayers],
       log: this.log.slice(-40),
@@ -775,6 +775,17 @@ class Game {
     if (!g.taskAssignment) g.taskAssignment = {};
     if (!g.comm) g.comm = {};
     if (!g.predictions) g.predictions = {};
+    // Firebase는 빈 객체/배열을 저장하며 삭제하므로 복구한다.
+    if (g.rescue) {
+      g.rescue.directionChoice = g.rescue.directionChoice || {};
+      g.rescue.passChoice = g.rescue.passChoice || {};
+      g.rescue.cardsGiven = g.rescue.cardsGiven || {};
+    }
+    if (!g.taskPool) g.taskPool = [];
+    if (!g.tricks) g.tricks = [];
+    if (!g.pendingPredictionTasks) g.pendingPredictionTasks = [];
+    if (!g.log) g.log = [];
+    if (!g.seats) g.seats = [];
     return g;
   }
 }
