@@ -187,7 +187,7 @@ export default function App() {
     const seatCount = Object.keys(members).length;
     if (seatCount !== r.numPlayers) { setBusy(false); setError(`${r.numPlayers}명이 모두 모여야 시작할 수 있어요 (현재 ${seatCount}명)`); return; }
 
-    const g = new Game(r.numPlayers, { rescueSignalEnabled: true });
+    const g = new Game(r.numPlayers, { rescueSignalEnabled: false });
     Object.entries(members).forEach(([pid, m]) => g.assignSeat(m.seat, pid, m.name));
     // 캠페인 1번 미션부터 시작
     const difficulty = CAMPAIGN_MISSIONS[0];
@@ -231,9 +231,6 @@ export default function App() {
     g.startMission(next, diff);
   });
   const doRetry = () => mutate((g) => g.retryMission());
-  const doRescueDir = (dir) => mutate((g) => g.rescueChooseDirection(mySeatOf(g), dir));
-  const doRescuePass = (willPass) => mutate((g) => g.rescueChoosePassOrNot(mySeatOf(g), willPass));
-  const doRescueCard = (card) => mutate((g) => g.rescueChooseCard(mySeatOf(g), card));
   const doPredict = (taskId, value) => mutate((g) => g.submitPrediction(mySeatOf(g), taskId, value));
 
   function mySeatOf(g) { return g.seatOfPlayer(myId); }
@@ -410,45 +407,8 @@ export default function App() {
             </div>
           )}
 
-          {/* 구조신호 단계 */}
-          {phase === 'rescueSignal' && view.rescue && (() => {
-            const dirChoice = view.rescue.directionChoice || {};
-            const passChoice = view.rescue.passChoice || {};
-            return (
-            <div style={{ background: '#103552', borderRadius: 14, padding: 16, marginBottom: 12, border: '1px solid rgba(76,141,255,0.3)' }}>
-              <div style={{ ...headline, fontSize: 16, color: '#4C8DFF', marginBottom: 8 }}>🆘 구조신호</div>
-              {view.rescue.step === 'direction' && (
-                <>
-                  <div style={{ fontSize: 12, color: '#7FA6C2', marginBottom: 10 }}>카드를 전달할 방향을 정하세요 (전원 같은 방향이어야 진행). 원치 않으면 다음 단계에서 전달 안 함을 고르면 돼요.</div>
-                  {dirChoice[seat] ? (
-                    <div style={{ textAlign: 'center', color: '#4A6E85', fontSize: 13 }}>선택함: {dirChoice[seat] === 'left' ? '왼쪽' : '오른쪽'} · 다른 인원 대기 중</div>
-                  ) : (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={() => doRescueDir('left')} disabled={busy} style={{ flex: 1, padding: 10, borderRadius: 10, border: '1px solid #4C8DFF', background: 'transparent', color: '#4C8DFF', fontWeight: 700, cursor: 'pointer' }}>왼쪽</button>
-                      <button onClick={() => doRescueDir('right')} disabled={busy} style={{ flex: 1, padding: 10, borderRadius: 10, border: '1px solid #4C8DFF', background: 'transparent', color: '#4C8DFF', fontWeight: 700, cursor: 'pointer' }}>오른쪽</button>
-                    </div>
-                  )}
-                </>
-              )}
-              {view.rescue.step === 'passOrNot' && (
-                <>
-                  <div style={{ fontSize: 12, color: '#7FA6C2', marginBottom: 10 }}>카드를 전달할까요? (전원 일치해야 함)</div>
-                  {passChoice[seat] !== undefined ? (
-                    <div style={{ textAlign: 'center', color: '#4A6E85', fontSize: 13 }}>선택함 · 다른 인원 대기 중</div>
-                  ) : (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={() => doRescuePass(true)} disabled={busy} style={{ flex: 1, padding: 10, borderRadius: 10, border: '1px solid #2FE6C7', background: 'transparent', color: '#2FE6C7', fontWeight: 700, cursor: 'pointer' }}>전달함</button>
-                      <button onClick={() => doRescuePass(false)} disabled={busy} style={{ flex: 1, padding: 10, borderRadius: 10, border: '1px solid #7FA6C2', background: 'transparent', color: '#7FA6C2', fontWeight: 700, cursor: 'pointer' }}>전달 안 함</button>
-                    </div>
-                  )}
-                </>
-              )}
-              {view.rescue.step === 'chooseCard' && (
-                <div style={{ fontSize: 12, color: '#7FA6C2' }}>아래 손패에서 이웃에게 넘길 카드를 고르세요 (잠수함 제외).</div>
-              )}
-            </div>
-            );
-          })()}
+          {/* (구조신호 기능은 사용하지 않음) */}
+
 
           {/* 예측 단계 */}
           {phase === 'prediction' && (
@@ -562,11 +522,6 @@ export default function App() {
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {myHand.map((card) => {
               const cid = `${card.suit}${card.value}`;
-              // 구조신호 카드 선택 단계
-              if (phase === 'rescueSignal' && view.rescue && view.rescue.step === 'chooseCard') {
-                const givable = card.suit !== 'SUBMARINE';
-                return <CardChip key={cid} card={card} size="lg" dim={!givable} onClick={givable ? () => doRescueCard(card) : undefined} />;
-              }
               const playable = isMyTurn && legalIds.has(cid);
               return <CardChip key={cid} card={card} size="lg" dim={phase === 'playing' && !playable} onClick={playable ? () => doPlayCard(card) : undefined} />;
             })}
