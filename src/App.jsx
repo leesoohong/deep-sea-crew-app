@@ -10,7 +10,7 @@ const SUIT_INFO = {
   BLUE: { label: '파랑', color: '#4C8DFF' },
   GREEN: { label: '초록', color: '#3FCB82' },
   YELLOW: { label: '노랑', color: '#F2C94C' },
-  SUBMARINE: { label: '잠수함', color: '#F0B84B' },
+  SUBMARINE: { label: '로켓', color: '#C8CDD4' },
 };
 
 // Firebase는 undefined를 저장 못 하므로 재귀적으로 제거
@@ -42,21 +42,73 @@ function loadGame(room) {
 
 function CardChip({ card, disabled, onClick, size = 'md', dim }) {
   const info = SUIT_INFO[card.suit];
+  const isRocket = card.suit === 'SUBMARINE';
   const dims = size === 'lg' ? { w: 50, h: 70, fs: 20 } : { w: 40, h: 56, fs: 16 };
   return (
     <button onClick={onClick} disabled={disabled}
       style={{
         width: dims.w, height: dims.h, borderRadius: 9,
-        border: `2px solid ${info.color}`,
-        background: card.suit === 'SUBMARINE' ? '#161C24' : `${info.color}1A`,
-        color: info.color, display: 'flex', flexDirection: 'column',
+        border: isRocket ? '2px solid #000000' : `2px solid ${info.color}`,
+        background: isRocket ? '#000000' : `${info.color}1A`,
+        color: isRocket ? '#FFFFFF' : info.color, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
         opacity: dim ? 0.4 : 1, flexShrink: 0,
         cursor: (disabled || !onClick) ? 'default' : 'pointer', fontFamily: "'Space Grotesk', sans-serif",
       }}>
       <span style={{ fontSize: dims.fs, fontWeight: 700, lineHeight: 1 }}>{card.value}</span>
-      <span style={{ fontSize: 8, marginTop: 2 }}>{info.label}</span>
+      <span style={{ fontSize: 8, marginTop: 2 }}>{isRocket ? '🚀' : info.label}</span>
     </button>
+  );
+}
+
+// 내 좌석(mySeat)을 아래(bottom)에 고정하고, 나머지를 시계방향으로 배치.
+// 반환: { [seat]: 'bottom'|'left'|'top'|'right'|'topleft'|'topright' }
+function seatPositions(numPlayers, mySeat) {
+  // 내 기준 상대 순번(시계방향): 0=나, 1,2,3,4...
+  const rel = (s) => (s - mySeat + numPlayers) % numPlayers;
+  const map = {};
+  const layouts = {
+    3: ['bottom', 'left', 'right'],
+    4: ['bottom', 'left', 'top', 'right'],
+    5: ['bottom', 'left', 'topleft', 'topright', 'right'],
+  };
+  const layout = layouts[numPlayers] || layouts[4];
+  for (let s = 0; s < numPlayers; s++) map[s] = layout[rel(s)];
+  return map;
+}
+
+// 테이블 위 특정 위치에 놓일 좌석 슬롯
+function TableSeat({ seat, pos, seatName, playedCard, isToAct, isWinner, isCaptain, isMe }) {
+  const posStyle = {
+    bottom: { bottom: 6, left: '50%', transform: 'translateX(-50%)', flexDirection: 'column' },
+    top: { top: 6, left: '50%', transform: 'translateX(-50%)', flexDirection: 'column-reverse' },
+    left: { left: 6, top: '50%', transform: 'translateY(-50%)', flexDirection: 'column' },
+    right: { right: 6, top: '50%', transform: 'translateY(-50%)', flexDirection: 'column' },
+    topleft: { top: 6, left: 6, flexDirection: 'column-reverse' },
+    topright: { top: 6, right: 6, flexDirection: 'column-reverse' },
+  }[pos] || { bottom: 6, left: '50%', transform: 'translateX(-50%)' };
+
+  return (
+    <div style={{ position: 'absolute', display: 'flex', alignItems: 'center', gap: 4, ...posStyle }}>
+      <div style={{
+        fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, whiteSpace: 'nowrap',
+        background: isToAct ? 'rgba(47,230,199,0.2)' : 'rgba(255,255,255,0.06)',
+        color: isToAct ? '#2FE6C7' : '#B7D3E0',
+        border: isToAct ? '1px solid #2FE6C7' : '1px solid transparent',
+      }}>
+        {isCaptain ? '⚓ ' : ''}{seatName}{isMe ? ' (나)' : ''}
+      </div>
+      <div style={{ height: 72, display: 'flex', alignItems: 'center' }}>
+        {playedCard ? (
+          <div style={{ position: 'relative' }}>
+            <CardChip card={playedCard} disabled />
+            {isWinner && <div style={{ position: 'absolute', top: -8, right: -8, fontSize: 14 }}>👑</div>}
+          </div>
+        ) : (
+          <div style={{ width: 40, height: 56, borderRadius: 9, border: '1px dashed rgba(255,255,255,0.12)' }} />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -416,40 +468,62 @@ export default function App() {
             </div>
           )}
 
-          {/* 진행 안내 */}
-          {phase === 'playing' && (
-            <div style={{ textAlign: 'center', marginBottom: 10, padding: 10, borderRadius: 10, background: isMyTurn ? 'rgba(47,230,199,0.12)' : 'rgba(255,255,255,0.04)', color: isMyTurn ? '#2FE6C7' : '#7FA6C2', fontSize: 14, fontWeight: 600 }}>
-              {isMyTurn ? '지금 당신의 차례예요' : `${seatName(toAct)}님의 차례`}
+          {/* 진행 안내 (내 차례일 때만 강조) */}
+          {phase === 'playing' && isMyTurn && (
+            <div style={{ textAlign: 'center', marginBottom: 10, padding: 8, borderRadius: 10, background: 'rgba(47,230,199,0.12)', color: '#2FE6C7', fontSize: 14, fontWeight: 600 }}>
+              지금 당신의 차례예요 — 아래에서 카드를 내세요
             </div>
           )}
 
-          {/* 현재 트릭 */}
-          {(phase === 'playing' || phase === 'missionEnd') && (
-            <div style={{ background: '#103552', borderRadius: 16, padding: 14, minHeight: 96, marginBottom: 10, border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: 12, color: '#7FA6C2', marginBottom: 8 }}>
-                {curTrick ? `트릭 ${curTrick.trickIndex}` : (view.previousTrick ? `지난 트릭 ${view.previousTrick.trickIndex}` : '트릭')}
-              </div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {(curTrick && curTrick.plays.length > 0 ? curTrick.plays : (view.previousTrick ? view.previousTrick.plays : [])).map((p) => (
-                  <div key={p.seat} style={{ textAlign: 'center' }}>
-                    <CardChip card={p.card} disabled />
-                    <div style={{ fontSize: 11, color: '#7FA6C2', marginTop: 4 }}>{seatName(p.seat)}</div>
+          {/* 포커 스타일 테이블 */}
+          {(phase === 'playing' || phase === 'missionEnd') && (() => {
+            const positions = seatPositions(view.numPlayers, seat);
+            const shownTrick = (curTrick && curTrick.plays.length > 0) ? curTrick : view.previousTrick;
+            const playsBySeat = {};
+            if (shownTrick) shownTrick.plays.forEach((p) => { playsBySeat[p.seat] = p.card; });
+            const winnerSeat = shownTrick && !curTrick ? shownTrick.winnerSeat : (shownTrick && shownTrick.winnerSeat !== undefined ? shownTrick.winnerSeat : null);
+            return (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: '#7FA6C2', marginBottom: 6, textAlign: 'center' }}>
+                  {curTrick ? `트릭 ${curTrick.trickIndex} / ${view.lastTrickIndex}` : (view.previousTrick ? `지난 트릭 ${view.previousTrick.trickIndex}` : '트릭')}
+                </div>
+                <div style={{
+                  position: 'relative', width: '100%', height: 300, borderRadius: 24,
+                  background: 'radial-gradient(ellipse at center, #16496b 0%, #0d3050 70%)',
+                  border: '2px solid rgba(255,255,255,0.08)', boxShadow: 'inset 0 0 40px rgba(0,0,0,0.4)',
+                }}>
+                  {/* 중앙 라벨 */}
+                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center', color: 'rgba(255,255,255,0.25)', fontSize: 12, fontFamily: "'Fraunces', serif" }}>
+                    {shownTrick && shownTrick.leadSuit ? `리드: ${SUIT_INFO[shownTrick.leadSuit].label}` : '딥 씨 크루'}
                   </div>
-                ))}
-                {(!curTrick || curTrick.plays.length === 0) && !view.previousTrick && <div style={{ color: '#4A6E85', fontSize: 13 }}>아직 낸 카드가 없어요</div>}
+                  {Array.from({ length: view.numPlayers }).map((_, s) => (
+                    <TableSeat key={s} seat={s} pos={positions[s]} seatName={seatName(s)}
+                      playedCard={playsBySeat[s]}
+                      isToAct={phase === 'playing' && toAct === s && !!curTrick}
+                      isWinner={winnerSeat === s && !!playsBySeat[s]}
+                      isCaptain={view.captainSeat === s}
+                      isMe={s === seat} />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
-          {/* 통신 정보 (다른 사람이 통신한 카드 표시) */}
-          {Object.entries(view.comm || {}).filter(([s, c]) => c && c.active).length > 0 && (
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 11, color: '#7FA6C2', marginBottom: 6 }}>📡 통신됨</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {Object.entries(view.comm).filter(([s, c]) => c && c.active).map(([s, c]) => (
-                  <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#7FA6C2' }}>
-                    <CardChip card={c.card} disabled />
-                    <span>{seatName(Number(s))}<br/>{c.position === 'HIGHEST' ? '최고' : c.position === 'LOWEST' ? '최저' : '유일'}</span>
+          {/* 통신 정보 (통신한 카드 표시) */}
+          {Object.entries(view.comm || {}).filter(([s, c]) => c && c.used).length > 0 && (
+            <div style={{ marginBottom: 10, background: '#0E2C44', borderRadius: 12, padding: 12, border: '1px solid rgba(76,141,255,0.2)' }}>
+              <div style={{ fontSize: 11, color: '#7FA6C2', marginBottom: 8 }}>📡 소나 통신</div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                {Object.entries(view.comm).filter(([s, c]) => c && c.used).map(([s, c]) => (
+                  <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ position: 'relative', opacity: c.active ? 1 : 0.4 }}>
+                      <CardChip card={c.card} disabled />
+                    </div>
+                    <div style={{ fontSize: 11, color: '#EAF6F6' }}>
+                      <div style={{ fontWeight: 700 }}>{seatName(Number(s))}</div>
+                      <div style={{ color: '#F0B84B' }}>{c.position === 'HIGHEST' ? '이 색 최고' : c.position === 'LOWEST' ? '이 색 최저' : '이 색 유일'}</div>
+                      {!c.active && <div style={{ color: '#4A6E85', fontSize: 10 }}>(이미 냄)</div>}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -479,7 +553,7 @@ export default function App() {
         <div style={{ width: '100%', maxWidth: 480, margin: '0 auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#7FA6C2', marginBottom: 6 }}>
             <span>내 손패 ({myHand.length}장){myTasks.length > 0 ? ` · 내 과제 ${myTasks.length}개` : ''}</span>
-            {canCommunicateNow && <span style={{ color: '#F0B84B' }}>카드를 길게 눌러 통신 (아래 통신 버튼)</span>}
+            {commUsed && <span style={{ color: '#4A6E85' }}>통신 사용함</span>}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {myHand.map((card) => {
@@ -495,17 +569,38 @@ export default function App() {
           </div>
 
           {/* 통신 버튼 */}
-          {canCommunicateNow && (
-            <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 11, color: '#7FA6C2', marginBottom: 6 }}>📡 통신할 카드 선택 (최고/최저/유일인 색깔 카드만 가능, 임무당 1회)</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {myHand.filter((c) => c.suit !== 'SUBMARINE').map((card) => {
-                  const cid = `comm-${card.suit}${card.value}`;
-                  return <CardChip key={cid} card={card} onClick={() => doCommunicate(card)} />;
-                })}
+          {canCommunicateNow && (() => {
+            // 통신 가능한 카드만 추림 (색깔별 최고/최저/유일)
+            const colorCards = myHand.filter((c) => c.suit !== 'SUBMARINE');
+            const bySuit = {};
+            colorCards.forEach((c) => { (bySuit[c.suit] = bySuit[c.suit] || []).push(c); });
+            const commOptions = [];
+            Object.values(bySuit).forEach((cards) => {
+              const vals = cards.map((c) => c.value);
+              const max = Math.max(...vals), min = Math.min(...vals);
+              cards.forEach((c) => {
+                let pos = null;
+                if (cards.length === 1) pos = '유일';
+                else if (c.value === max) pos = '최고';
+                else if (c.value === min) pos = '최저';
+                if (pos) commOptions.push({ card: c, pos });
+              });
+            });
+            return (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                <div style={{ fontSize: 11, color: '#F0B84B', marginBottom: 6 }}>📡 소나 통신 (임무당 1회 · 트릭 시작 전에만) — 아래 카드 중 하나를 눌러 알리기</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {commOptions.map(({ card, pos }) => (
+                    <div key={`comm-${card.suit}${card.value}`} style={{ textAlign: 'center' }}>
+                      <CardChip card={card} onClick={() => doCommunicate(card)} />
+                      <div style={{ fontSize: 9, color: '#7FA6C2', marginTop: 2 }}>{pos}</div>
+                    </div>
+                  ))}
+                  {commOptions.length === 0 && <div style={{ fontSize: 12, color: '#4A6E85' }}>통신 가능한 카드가 없어요 (최고/최저/유일 조건)</div>}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {error && <div style={{ color: '#FF6FA5', fontSize: 12, marginTop: 8 }}>{error}</div>}
         </div>
