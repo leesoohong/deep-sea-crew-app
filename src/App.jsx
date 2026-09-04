@@ -338,7 +338,7 @@ export default function App() {
   const myTasks = view.taskPool.filter((t) => t.owner === seat);
   const captainName = view.captainSeat >= 0 ? seatName(view.captainSeat) : '-';
 
-  const commUsed = view.comm[seat] && view.comm[seat].used;
+  const commUsed = (view.comm || {})[seat] && view.comm[seat].used;
   const canCommunicateNow = phase === 'playing' && curTrick && curTrick.plays.length === 0 && !commUsed && !view.missionModifiers.noCommunication;
 
   return (
@@ -411,14 +411,17 @@ export default function App() {
           )}
 
           {/* 구조신호 단계 */}
-          {phase === 'rescueSignal' && view.rescue && (
+          {phase === 'rescueSignal' && view.rescue && (() => {
+            const dirChoice = view.rescue.directionChoice || {};
+            const passChoice = view.rescue.passChoice || {};
+            return (
             <div style={{ background: '#103552', borderRadius: 14, padding: 16, marginBottom: 12, border: '1px solid rgba(76,141,255,0.3)' }}>
               <div style={{ ...headline, fontSize: 16, color: '#4C8DFF', marginBottom: 8 }}>🆘 구조신호</div>
               {view.rescue.step === 'direction' && (
                 <>
                   <div style={{ fontSize: 12, color: '#7FA6C2', marginBottom: 10 }}>카드를 전달할 방향을 정하세요 (전원 같은 방향이어야 진행). 원치 않으면 다음 단계에서 전달 안 함을 고르면 돼요.</div>
-                  {view.rescue.directionChoice[seat] ? (
-                    <div style={{ textAlign: 'center', color: '#4A6E85', fontSize: 13 }}>선택함: {view.rescue.directionChoice[seat] === 'left' ? '왼쪽' : '오른쪽'} · 다른 인원 대기 중</div>
+                  {dirChoice[seat] ? (
+                    <div style={{ textAlign: 'center', color: '#4A6E85', fontSize: 13 }}>선택함: {dirChoice[seat] === 'left' ? '왼쪽' : '오른쪽'} · 다른 인원 대기 중</div>
                   ) : (
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button onClick={() => doRescueDir('left')} disabled={busy} style={{ flex: 1, padding: 10, borderRadius: 10, border: '1px solid #4C8DFF', background: 'transparent', color: '#4C8DFF', fontWeight: 700, cursor: 'pointer' }}>왼쪽</button>
@@ -430,7 +433,7 @@ export default function App() {
               {view.rescue.step === 'passOrNot' && (
                 <>
                   <div style={{ fontSize: 12, color: '#7FA6C2', marginBottom: 10 }}>카드를 전달할까요? (전원 일치해야 함)</div>
-                  {view.rescue.passChoice[seat] !== undefined ? (
+                  {passChoice[seat] !== undefined ? (
                     <div style={{ textAlign: 'center', color: '#4A6E85', fontSize: 13 }}>선택함 · 다른 인원 대기 중</div>
                   ) : (
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -444,7 +447,8 @@ export default function App() {
                 <div style={{ fontSize: 12, color: '#7FA6C2' }}>아래 손패에서 이웃에게 넘길 카드를 고르세요 (잠수함 제외).</div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           {/* 예측 단계 */}
           {phase === 'prediction' && (
