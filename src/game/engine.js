@@ -786,6 +786,11 @@ class Game {
     if (!g.pendingPredictionTasks) g.pendingPredictionTasks = [];
     if (!g.log) g.log = [];
     if (!g.seats) g.seats = [];
+    // Firebase가 빈 배열을 삭제하므로 트릭의 plays를 복구한다.
+    if (g.currentTrick && !g.currentTrick.plays) g.currentTrick.plays = [];
+    if (Array.isArray(g.tricks)) {
+      g.tricks.forEach((t) => { if (t && !t.plays) t.plays = []; });
+    }
     return g;
   }
 }
