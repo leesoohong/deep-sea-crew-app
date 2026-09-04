@@ -36,10 +36,10 @@ function playerName(room, id) {
 }
 
 function applyCardPlay(state, playerId, card) {
-  const hand = state.hands[playerId];
+  const hand = (state.hands && state.hands[playerId]) || [];
   const newHand = hand.filter((c) => c.id !== card.id);
-  const newHands = { ...state.hands, [playerId]: newHand };
-  const newTrick = [...state.trick, { playerId, card }];
+  const newHands = { ...(state.hands || {}), [playerId]: newHand };
+  const newTrick = [...(state.trick || []), { playerId, card }];
   let updated = { ...state, hands: newHands, trick: newTrick };
 
   if (newTrick.length === state.turnOrder.length) {
@@ -52,11 +52,11 @@ function applyCardPlay(state, playerId, card) {
       const ledCards = newTrick.filter((t) => t.card.suit === leadSuit);
       winner = ledCards.reduce((a, b) => (a.card.num > b.card.num ? a : b));
     }
-    const cardsLeft = Object.values(newHands).some((h) => h.length > 0);
+    const cardsLeft = state.turnOrder.some((pid) => ((newHands[pid] || []).length > 0));
     updated = {
       ...updated,
       trickResult: { winnerId: winner.playerId, cards: newTrick },
-      history: [...state.history, { trickNumber: state.trickNumber, winnerId: winner.playerId, cards: newTrick }],
+      history: [...(state.history || []), { trickNumber: state.trickNumber, winnerId: winner.playerId, cards: newTrick }],
       finished: !cardsLeft,
     };
   } else {
@@ -175,10 +175,11 @@ export default function App() {
     const r = await readRoom(code);
     if (!r) { setBusy(false); setError('방을 찾을 수 없어요'); return; }
     if (r.started) { setBusy(false); setError('이미 시작된 게임이에요'); return; }
-    if (r.players.some((p) => p.id === myId)) {
+    const existingPlayers = r.players || [];
+    if (existingPlayers.some((p) => p.id === myId)) {
       setBusy(false); setRoomCode(code); setRoom(r); setScreen('lobby'); return;
     }
-    const updated = { ...r, players: [...r.players, { id: myId, name: name.trim() }] };
+    const updated = { ...r, players: [...existingPlayers, { id: myId, name: name.trim() }] };
     const ok = await writeRoom(code, updated);
     setBusy(false);
     if (ok) { setRoomCode(code); setRoom(updated); setScreen('lobby'); }
@@ -221,9 +222,11 @@ export default function App() {
     if (room?.started && screen === 'lobby') setScreen('game');
   }, [room, screen]);
 
-  const myHand = room ? room.hands[myId] || [] : [];
-  const ledSuit = room && room.trick.length > 0 ? room.trick[0].card.suit : null;
-  const myTurn = room && room.started && !room.finished && !room.trickResult && room.turnOrder[room.turnIndex] === myId;
+  const myHand = room ? (room.hands && room.hands[myId]) || [] : [];
+  const roomTrick = room ? room.trick || [] : [];
+  const ledSuit = roomTrick.length > 0 ? roomTrick[0].card.suit : null;
+  const roomTurnOrder = room ? room.turnOrder || [] : [];
+  const myTurn = room && room.started && !room.finished && !room.trickResult && roomTurnOrder[room.turnIndex] === myId;
 
   const canPlay = (card) => {
     if (!ledSuit) return true;
@@ -235,9 +238,11 @@ export default function App() {
     if (busy || !myTurn || !canPlay(card)) return;
     setBusy(true);
     const r = await readRoom(roomCode);
-    if (!r || r.turnOrder[r.turnIndex] !== myId) { setBusy(false); return; }
-    const led = r.trick.length > 0 ? r.trick[0].card.suit : null;
-    const hand = r.hands[myId];
+    const rTurnOrder = r ? r.turnOrder || [] : [];
+    if (!r || rTurnOrder[r.turnIndex] !== myId) { setBusy(false); return; }
+    const rTrick = r.trick || [];
+    const led = rTrick.length > 0 ? rTrick[0].card.suit : null;
+    const hand = (r.hands && r.hands[myId]) || [];
     if (led && card.suit !== led && hand.some((c) => c.suit === led)) { setBusy(false); return; }
     const updated = applyCardPlay(r, myId, card);
     await writeRoom(roomCode, updated);
@@ -354,20 +359,20 @@ export default function App() {
 
             {!room.finished && (
               <div style={{ textAlign: 'center', marginBottom: 16, padding: 10, borderRadius: 10, background: myTurn ? 'rgba(47,230,199,0.12)' : 'rgba(255,255,255,0.04)', color: myTurn ? '#2FE6C7' : '#7FA6C2', fontSize: 14, fontWeight: 600 }}>
-                {room.trickResult ? '트릭 결과 확인' : myTurn ? '지금 당신의 차례예요' : `${playerName(room, room.turnOrder[room.turnIndex])}님의 차례`}
+                {room.trickResult ? '트릭 결과 확인' : myTurn ? '지금 당신의 차례예요' : `${playerName(room, roomTurnOrder[room.turnIndex])}님의 차례`}
               </div>
             )}
 
             <div style={{ background: '#103552', borderRadius: 16, padding: 18, minHeight: 130, marginBottom: 18, border: '1px solid rgba(255,255,255,0.08)' }}>
               <div style={{ fontSize: 12, color: '#7FA6C2', marginBottom: 10 }}>{room.finished ? '마지막 트릭' : '현재 트릭'}</div>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {(room.trickResult ? room.trickResult.cards : room.trick).map((t) => (
+                {(room.trickResult ? room.trickResult.cards : roomTrick).map((t) => (
                   <div key={t.playerId} style={{ textAlign: 'center' }}>
                     <CardView card={t.card} disabled />
                     <div style={{ fontSize: 11, color: '#7FA6C2', marginTop: 4 }}>{playerName(room, t.playerId)}</div>
                   </div>
                 ))}
-                {room.trick.length === 0 && !room.trickResult && (
+                {roomTrick.length === 0 && !room.trickResult && (
                   <div style={{ color: '#4A6E85', fontSize: 13 }}>아직 낸 카드가 없어요</div>
                 )}
               </div>
@@ -387,7 +392,7 @@ export default function App() {
             {room.finished && (
               <div style={{ background: '#103552', borderRadius: 16, padding: 20, border: '1px solid rgba(255,255,255,0.08)', marginBottom: 18 }}>
                 <div style={{ ...headline, fontSize: 20, marginBottom: 12, color: '#2FE6C7' }}>모든 카드를 다 냈어요</div>
-                {room.history.map((h) => (
+                {(room.history || []).map((h) => (
                   <div key={h.trickNumber} style={{ fontSize: 13, color: '#B7D3E0', padding: '4px 0' }}>
                     트릭 {h.trickNumber} — {playerName(room, h.winnerId)} 승
                   </div>
