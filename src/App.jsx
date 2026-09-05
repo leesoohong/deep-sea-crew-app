@@ -61,6 +61,40 @@ function CardChip({ card, disabled, onClick, size = 'md', dim }) {
   );
 }
 
+// 미션 텍스트를 자리 옆에 붙일 짧은 형태로 요약
+function shortTaskLabel(task) {
+  // task.text가 짧으면 그대로, 길면 앞부분 + 말줄임 (id도 함께)
+  const text = (task.text || '').replace(/^owner(가|는)\s*/, '').trim();
+  if (text.length <= 16) return text;
+  return `${task.id}`;
+}
+
+// 잠수부 실루엣 (직접 그린 SVG)
+function DiverSilhouette({ style }) {
+  return (
+    <svg viewBox="0 0 80 120" width="60" height="90" style={style} aria-hidden>
+      <g fill="#0b3a55" stroke="#1d5f82" strokeWidth="1.5">
+        {/* 헬멧 */}
+        <circle cx="40" cy="20" r="14" />
+        <circle cx="45" cy="18" r="4" fill="#7FBEDA" stroke="none" opacity="0.7" />
+        {/* 몸통 */}
+        <rect x="28" y="32" width="24" height="34" rx="8" />
+        {/* 산소통 */}
+        <rect x="22" y="34" width="7" height="24" rx="3" fill="#08293c" />
+        {/* 팔 */}
+        <rect x="16" y="38" width="12" height="7" rx="3.5" transform="rotate(-20 22 41)" />
+        <rect x="52" y="38" width="12" height="7" rx="3.5" transform="rotate(20 58 41)" />
+        {/* 다리 */}
+        <rect x="30" y="64" width="8" height="26" rx="4" transform="rotate(8 34 77)" />
+        <rect x="42" y="64" width="8" height="26" rx="4" transform="rotate(-8 46 77)" />
+        {/* 오리발 */}
+        <ellipse cx="31" cy="94" rx="7" ry="4" transform="rotate(8 31 94)" />
+        <ellipse cx="49" cy="94" rx="7" ry="4" transform="rotate(-8 49 94)" />
+      </g>
+    </svg>
+  );
+}
+
 // 내 좌석(mySeat)을 아래(bottom)에 고정하고, 나머지를 시계방향으로 배치.
 // 반환: { [seat]: 'bottom'|'left'|'top'|'right'|'topleft'|'topright' }
 function seatPositions(numPlayers, mySeat) {
@@ -78,7 +112,7 @@ function seatPositions(numPlayers, mySeat) {
 }
 
 // 테이블 위 특정 위치에 놓일 좌석 슬롯
-function TableSeat({ seat, pos, seatName, playedCard, isToAct, isWinner, isCaptain, isMe }) {
+function TableSeat({ seat, pos, seatName, playedCard, isToAct, isWinner, isCaptain, isMe, tasks }) {
   const posStyle = {
     bottom: { bottom: 6, left: '50%', transform: 'translateX(-50%)', flexDirection: 'column' },
     top: { top: 6, left: '50%', transform: 'translateX(-50%)', flexDirection: 'column-reverse' },
@@ -89,15 +123,30 @@ function TableSeat({ seat, pos, seatName, playedCard, isToAct, isWinner, isCapta
   }[pos] || { bottom: 6, left: '50%', transform: 'translateX(-50%)' };
 
   return (
-    <div style={{ position: 'absolute', display: 'flex', alignItems: 'center', gap: 4, ...posStyle }}>
+    <div style={{ position: 'absolute', display: 'flex', alignItems: 'center', gap: 4, maxWidth: 150, ...posStyle }}>
       <div style={{
         fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, whiteSpace: 'nowrap',
-        background: isToAct ? 'rgba(47,230,199,0.2)' : 'rgba(255,255,255,0.06)',
-        color: isToAct ? '#2FE6C7' : '#B7D3E0',
-        border: isToAct ? '1px solid #2FE6C7' : '1px solid transparent',
+        background: isToAct ? 'rgba(47,230,199,0.2)' : 'rgba(0,0,0,0.35)',
+        color: isToAct ? '#2FE6C7' : '#EAF6F6',
+        border: isToAct ? '1px solid #2FE6C7' : '1px solid rgba(255,255,255,0.1)',
       }}>
         {isCaptain ? '⚓ ' : ''}{seatName}{isMe ? ' (나)' : ''}
       </div>
+      {/* 이 사람의 미션 뱃지 */}
+      {tasks && tasks.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+          {tasks.map((t) => (
+            <div key={t.id} title={t.text} style={{
+              fontSize: 9.5, padding: '1px 6px', borderRadius: 6, maxWidth: 140, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              background: t.status === 'success' ? 'rgba(47,230,199,0.2)' : t.status === 'fail' ? 'rgba(255,111,165,0.2)' : 'rgba(240,184,74,0.18)',
+              color: t.status === 'success' ? '#2FE6C7' : t.status === 'fail' ? '#FF6FA5' : '#F0B84B',
+              border: `1px solid ${t.status === 'success' ? 'rgba(47,230,199,0.4)' : t.status === 'fail' ? 'rgba(255,111,165,0.4)' : 'rgba(240,184,74,0.35)'}`,
+            }}>
+              {t.status === 'success' ? '✅ ' : t.status === 'fail' ? '❌ ' : ''}{shortTaskLabel(t)}
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{ height: 72, display: 'flex', alignItems: 'center' }}>
         {playedCard ? (
           <div style={{ position: 'relative' }}>
@@ -471,27 +520,43 @@ export default function App() {
             const playsBySeat = {};
             if (shownTrick) shownTrick.plays.forEach((p) => { playsBySeat[p.seat] = p.card; });
             const winnerSeat = shownTrick && !curTrick ? shownTrick.winnerSeat : (shownTrick && shownTrick.winnerSeat !== undefined ? shownTrick.winnerSeat : null);
+            // 좌석별 미션 모으기
+            const tasksBySeat = {};
+            view.taskPool.forEach((t) => { if (t.owner !== null && t.owner !== undefined) { (tasksBySeat[t.owner] = tasksBySeat[t.owner] || []).push(t); } });
             return (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 12, color: '#7FA6C2', marginBottom: 6, textAlign: 'center' }}>
                   {curTrick ? `트릭 ${curTrick.trickIndex} / ${view.lastTrickIndex}` : (view.previousTrick ? `지난 트릭 ${view.previousTrick.trickIndex}` : '트릭')}
                 </div>
                 <div style={{
-                  position: 'relative', width: '100%', height: 300, borderRadius: 24,
-                  background: 'radial-gradient(ellipse at center, #16496b 0%, #0d3050 70%)',
-                  border: '2px solid rgba(255,255,255,0.08)', boxShadow: 'inset 0 0 40px rgba(0,0,0,0.4)',
+                  position: 'relative', width: '100%', height: 360, borderRadius: 24, overflow: 'hidden',
+                  background: 'linear-gradient(180deg, #0d4a68 0%, #0a3550 40%, #062536 100%)',
+                  border: '2px solid rgba(120,200,230,0.15)', boxShadow: 'inset 0 0 60px rgba(0,0,0,0.5)',
                 }}>
+                  {/* 바다 배경 장식: 빛줄기 */}
+                  <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.25,
+                    background: 'linear-gradient(105deg, transparent 25%, rgba(140,210,235,0.18) 35%, transparent 45%, rgba(140,210,235,0.12) 60%, transparent 72%)' }} />
+                  {/* 기포 */}
+                  {[...Array(10)].map((_, i) => {
+                    const size = 3 + (i % 3) * 2; const left = (i * 29 + 5) % 100; const delay = (i % 5) * 1.1; const dur = 6 + (i % 4) * 2;
+                    return <div key={`b${i}`} style={{ position: 'absolute', bottom: -10, left: `${left}%`, width: size, height: size, borderRadius: '50%', background: 'rgba(160,220,240,0.35)', animation: `floatUp ${dur}s linear ${delay}s infinite`, pointerEvents: 'none' }} />;
+                  })}
+                  {/* 잠수부 실루엣 (중앙 뒤편 장식) */}
+                  <DiverSilhouette style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-58%)', opacity: 0.18, pointerEvents: 'none' }} />
+
                   {/* 중앙 라벨 */}
-                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center', color: 'rgba(255,255,255,0.25)', fontSize: 12, fontFamily: "'Fraunces', serif" }}>
-                    {shownTrick && shownTrick.leadSuit ? `리드: ${SUIT_INFO[shownTrick.leadSuit].label}` : '딥 씨 크루'}
+                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,42px)', textAlign: 'center', color: 'rgba(255,255,255,0.35)', fontSize: 12, fontFamily: "'Fraunces', serif", pointerEvents: 'none' }}>
+                    {shownTrick && shownTrick.leadSuit ? `리드: ${SUIT_INFO[shownTrick.leadSuit].label}` : ''}
                   </div>
+
                   {Array.from({ length: view.numPlayers }).map((_, s) => (
                     <TableSeat key={s} seat={s} pos={positions[s]} seatName={seatName(s)}
                       playedCard={playsBySeat[s]}
                       isToAct={phase === 'playing' && toAct === s && !!curTrick}
                       isWinner={winnerSeat === s && !!playsBySeat[s]}
                       isCaptain={view.captainSeat === s}
-                      isMe={s === seat} />
+                      isMe={s === seat}
+                      tasks={tasksBySeat[s]} />
                   ))}
                 </div>
               </div>
