@@ -172,27 +172,49 @@ function shortTaskLabel(task) {
   return `${task.id}`;
 }
 
-// 잠수부 실루엣 (직접 그린 SVG)
+// 잠수부 (구리 헬멧 클래식 다이버, 직접 그린 SVG)
 function DiverSilhouette({ style }) {
   return (
-    <svg viewBox="0 0 80 120" width="60" height="90" style={style} aria-hidden>
-      <g fill="#0b3a55" stroke="#1d5f82" strokeWidth="1.5">
-        {/* 헬멧 */}
-        <circle cx="40" cy="20" r="14" />
-        <circle cx="45" cy="18" r="4" fill="#7FBEDA" stroke="none" opacity="0.7" />
-        {/* 몸통 */}
-        <rect x="28" y="32" width="24" height="34" rx="8" />
-        {/* 산소통 */}
-        <rect x="22" y="34" width="7" height="24" rx="3" fill="#08293c" />
-        {/* 팔 */}
-        <rect x="16" y="38" width="12" height="7" rx="3.5" transform="rotate(-20 22 41)" />
-        <rect x="52" y="38" width="12" height="7" rx="3.5" transform="rotate(20 58 41)" />
-        {/* 다리 */}
-        <rect x="30" y="64" width="8" height="26" rx="4" transform="rotate(8 34 77)" />
-        <rect x="42" y="64" width="8" height="26" rx="4" transform="rotate(-8 46 77)" />
-        {/* 오리발 */}
-        <ellipse cx="31" cy="94" rx="7" ry="4" transform="rotate(8 31 94)" />
-        <ellipse cx="49" cy="94" rx="7" ry="4" transform="rotate(-8 49 94)" />
+    <svg viewBox="0 0 120 150" width="80" height="100" style={style} aria-hidden>
+      <ellipse cx="34" cy="16" rx="4" ry="5" fill="#bfe6f0" opacity="0.6" />
+      <ellipse cx="46" cy="6" rx="3" ry="4" fill="#bfe6f0" opacity="0.5" />
+      <ellipse cx="26" cy="28" rx="5" ry="6" fill="#bfe6f0" opacity="0.5" />
+      <path d="M78 34 Q100 54 90 84" fill="none" stroke="#1a3a48" strokeWidth="4" strokeLinecap="round" />
+      <rect x="28" y="74" width="64" height="58" rx="20" fill="#2f5f3a" stroke="#1f4227" strokeWidth="3" />
+      <rect x="16" y="82" width="18" height="34" rx="9" fill="#2f5f3a" stroke="#1f4227" strokeWidth="3" />
+      <rect x="86" y="82" width="18" height="34" rx="9" fill="#2f5f3a" stroke="#1f4227" strokeWidth="3" />
+      <rect x="46" y="96" width="28" height="20" rx="5" fill="#9aa0a6" stroke="#5f6469" strokeWidth="2" />
+      <circle cx="60" cy="36" r="30" fill="#c8802e" stroke="#7a4a14" strokeWidth="4" />
+      <circle cx="60" cy="18" r="7" fill="#c8802e" stroke="#7a4a14" strokeWidth="3" />
+      <circle cx="60" cy="36" r="18" fill="#153f52" stroke="#7a4a14" strokeWidth="4" />
+      <ellipse cx="51" cy="28" rx="7" ry="5" fill="#bfe6f0" opacity="0.7" />
+      <rect x="18" y="26" width="12" height="14" rx="4" fill="#b0742a" stroke="#7a4a14" strokeWidth="2" />
+      <rect x="90" y="26" width="12" height="14" rx="4" fill="#b0742a" stroke="#7a4a14" strokeWidth="2" />
+    </svg>
+  );
+}
+
+// 빈티지 잠수함 (제목 양옆 장식용)
+function SubmarineIcon({ style, flip }) {
+  return (
+    <svg viewBox="0 0 150 120" width="66" height="53" style={{ ...(flip ? { transform: 'scaleX(-1)' } : {}), ...style }} aria-hidden>
+      <ellipse cx="45" cy="42" rx="5" ry="6" fill="#bfe6f0" opacity="0.6" />
+      <ellipse cx="57" cy="28" rx="3" ry="4" fill="#bfe6f0" opacity="0.5" />
+      <g transform="translate(75,68)">
+        <ellipse cx="0" cy="4" rx="62" ry="32" fill="#c8802e" stroke="#7a4a14" strokeWidth="3.5" />
+        <path d="M60 4 Q82 -14 82 4 Q82 22 60 4 Z" fill="#b0742a" stroke="#7a4a14" strokeWidth="3.5" />
+        <rect x="-16" y="-34" width="32" height="20" rx="8" fill="#b0742a" stroke="#7a4a14" strokeWidth="3.5" />
+        <rect x="-3" y="-54" width="6" height="24" rx="3" fill="#8a5518" stroke="#7a4a14" strokeWidth="2" />
+        <circle cx="0" cy="-58" r="5" fill="#f2c94c" stroke="#7a4a14" strokeWidth="2" />
+        <circle cx="-26" cy="2" r="13" fill="#153f52" stroke="#7a4a14" strokeWidth="3.5" />
+        <ellipse cx="-31" cy="-3" rx="4" ry="3" fill="#bfe6f0" opacity="0.7" />
+        <circle cx="6" cy="4" r="13" fill="#153f52" stroke="#7a4a14" strokeWidth="3.5" />
+        <ellipse cx="1" cy="-1" rx="4" ry="3" fill="#bfe6f0" opacity="0.7" />
+        <circle cx="34" cy="6" r="9" fill="#153f52" stroke="#7a4a14" strokeWidth="3" />
+        <circle cx="-44" cy="24" r="5" fill="#8a5518" />
+        <circle cx="-22" cy="31" r="5" fill="#8a5518" />
+        <circle cx="2" cy="33" r="5" fill="#8a5518" />
+        <circle cx="26" cy="31" r="5" fill="#8a5518" />
       </g>
     </svg>
   );
@@ -548,12 +570,16 @@ export default function App() {
 
         <div style={{ width: '100%', maxWidth: 440, position: 'relative', zIndex: 1 }}>
           <div style={{ textAlign: 'center', marginBottom: 30 }}>
-            <div style={{
-              fontFamily: "'Black Han Sans', sans-serif", fontSize: 64, lineHeight: 0.95,
-              color: '#EAF6F6', letterSpacing: 1,
-              textShadow: '0 2px 0 #0a3a52, 0 4px 18px rgba(0,0,0,0.6), 0 0 30px rgba(80,180,220,0.4)',
-            }}>
-              딥 씨<br />크루
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <SubmarineIcon flip style={{ opacity: 0.95, flexShrink: 0 }} />
+              <div style={{
+                fontFamily: "'Black Han Sans', sans-serif", fontSize: 56, lineHeight: 0.95,
+                color: '#EAF6F6', letterSpacing: 1,
+                textShadow: '0 2px 0 #0a3a52, 0 4px 18px rgba(0,0,0,0.6), 0 0 30px rgba(80,180,220,0.4)',
+              }}>
+                딥 씨<br />크루
+              </div>
+              <SubmarineIcon style={{ opacity: 0.95, flexShrink: 0 }} />
             </div>
             <div style={{ marginTop: 10, color: '#7FBEDA', fontSize: 15, letterSpacing: 6, fontWeight: 500 }}>심해에서의 임무</div>
           </div>
@@ -823,7 +849,7 @@ export default function App() {
                     return <div key={`b${i}`} style={{ position: 'absolute', bottom: -10, left: `${left}%`, width: size, height: size, borderRadius: '50%', background: 'rgba(160,220,240,0.35)', animation: `floatUp ${dur}s linear ${delay}s infinite`, pointerEvents: 'none' }} />;
                   })}
                   {/* 잠수부 실루엣 (중앙 뒤편 장식) */}
-                  <DiverSilhouette style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-58%)', opacity: 0.18, pointerEvents: 'none' }} />
+                  <DiverSilhouette style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-55%) scale(1.4)', opacity: 0.4, pointerEvents: 'none' }} />
 
                   {/* 중앙 라벨 */}
                   <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,42px)', textAlign: 'center', color: 'rgba(255,255,255,0.35)', fontSize: 12, fontFamily: "'Fraunces', serif", pointerEvents: 'none' }}>
