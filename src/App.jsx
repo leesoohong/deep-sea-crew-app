@@ -73,9 +73,10 @@ function CardChip({ card, disabled, onClick, size = 'md', dim }) {
   );
 }
 
-// 심해 몽환 앰비언트 BGM (Web Audio API로 실시간 합성, 파일 불필요)
+// 물속 뽀글뽀글 앰비언트 BGM (밝고 귀여운 느낌, Web Audio API로 합성)
 function useOceanAmbience() {
   const ctxRef = React.useRef(null);
+  const timerRef = React.useRef(null);
   const nodesRef = React.useRef([]);
   const [playing, setPlaying] = React.useState(false);
 
@@ -87,60 +88,68 @@ function useOceanAmbience() {
     ctxRef.current = ctx;
 
     const master = ctx.createGain();
-    master.gain.value = 0.0;
-    master.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 3); // 서서히 페이드인
+    master.gain.value = 0;
+    master.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 2);
     master.connect(ctx.destination);
 
-    // 은은한 로우패스로 심해 먹먹함
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 700;
-    lp.connect(master);
-
-    // 겹치는 저음 드론 (몽환적 화음: 근음 + 5도 + 옥타브)
-    const freqs = [55, 82.4, 110, 164.8]; // A1, E2, A2, E3
-    freqs.forEach((f, i) => {
+    // 부드러운 배경 패드 (밝은 화음: C, E, G, C — 은은하게)
+    const padGain = ctx.createGain();
+    padGain.gain.value = 0.06;
+    const padFilter = ctx.createBiquadFilter();
+    padFilter.type = 'lowpass';
+    padFilter.frequency.value = 1200;
+    padFilter.connect(padGain);
+    padGain.connect(master);
+    [261.6, 329.6, 392.0, 523.3].forEach((f, i) => {
       const osc = ctx.createOscillator();
-      osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+      osc.type = 'sine';
       osc.frequency.value = f;
       const g = ctx.createGain();
-      g.gain.value = 0.12 / (i + 1);
-      // 아주 느린 볼륨 흔들림(LFO)으로 물결 느낌
+      g.gain.value = 0.5 / (i + 2);
+      // 아주 느린 흔들림
       const lfo = ctx.createOscillator();
-      lfo.frequency.value = 0.05 + i * 0.02;
-      const lfoGain = ctx.createGain();
-      lfoGain.gain.value = 0.05;
-      lfo.connect(lfoGain);
-      lfoGain.connect(g.gain);
-      osc.connect(g);
-      g.connect(lp);
-      osc.start();
-      lfo.start();
+      lfo.frequency.value = 0.06 + i * 0.015;
+      const lfoG = ctx.createGain();
+      lfoG.gain.value = 0.15;
+      lfo.connect(lfoG); lfoG.connect(g.gain);
+      osc.connect(g); g.connect(padFilter);
+      osc.start(); lfo.start();
       nodesRef.current.push(osc, lfo);
     });
 
-    // 아주 느리게 오르내리는 고음 "빛줄기" 패드
-    const shimmer = ctx.createOscillator();
-    shimmer.type = 'sine';
-    shimmer.frequency.value = 440;
-    const shimmerGain = ctx.createGain();
-    shimmerGain.gain.value = 0.03;
-    const slowLfo = ctx.createOscillator();
-    slowLfo.frequency.value = 0.03;
-    const slowLfoGain = ctx.createGain();
-    slowLfoGain.gain.value = 60;
-    slowLfo.connect(slowLfoGain);
-    slowLfoGain.connect(shimmer.frequency);
-    shimmer.connect(shimmerGain);
-    shimmerGain.connect(lp);
-    shimmer.start();
-    slowLfo.start();
-    nodesRef.current.push(shimmer, slowLfo);
+    // 뽀글 물방울 하나 재생
+    const bubble = () => {
+      if (!ctxRef.current) return;
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      // 낮은 음에서 높은 음으로 빠르게 올라가는 "뽀글" 특유의 삑 소리
+      const startF = 400 + Math.random() * 500;
+      const endF = startF + 300 + Math.random() * 700;
+      osc.frequency.setValueAtTime(startF, t);
+      osc.frequency.exponentialRampToValueAtTime(endF, t + 0.08);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.12 + Math.random() * 0.06, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.12 + Math.random() * 0.08);
+      osc.connect(g); g.connect(master);
+      osc.start(t);
+      osc.stop(t + 0.25);
+    };
+
+    // 랜덤 간격으로 물방울 (가끔 여러 개 연달아 = 뽀글뽀글)
+    const scheduleBubbles = () => {
+      const cluster = Math.random() < 0.3 ? 2 + Math.floor(Math.random() * 3) : 1;
+      for (let i = 0; i < cluster; i++) setTimeout(bubble, i * (80 + Math.random() * 120));
+      timerRef.current = setTimeout(scheduleBubbles, 500 + Math.random() * 1800);
+    };
+    scheduleBubbles();
 
     setPlaying(true);
   };
 
   const stop = () => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     const ctx = ctxRef.current;
     if (!ctx) return;
     nodesRef.current.forEach((n) => { try { n.stop(); } catch (e) {} });
@@ -280,7 +289,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // 새로고침 후 이전에 있던 방으로 자동 복귀
+  // 새로고침 후 이전에 있던 방으로 자동 복귀 (게임 진행 중이던 경우만)
   useEffect(() => {
     if (!authReady || !myId) return;
     let saved;
@@ -288,23 +297,28 @@ export default function App() {
     if (!saved || !saved.roomCode) return;
     (async () => {
       const r = await readRoom(saved.roomCode);
-      if (r && r.members && r.members[myId]) {
+      // 내가 멤버이고 && 게임이 실제로 시작된 방일 때만 자동 복귀
+      if (r && r.started && r.members && r.members[myId]) {
         setRoomCode(saved.roomCode);
         setRoom(r);
         setName(r.members[myId].name || '');
-        setScreen(r.started ? 'game' : 'lobby');
+        setScreen('game');
       } else {
         localStorage.removeItem('crew_session');
       }
     })();
   }, [authReady, myId]);
 
-  // 방에 들어가 있으면 세션 저장 (새로고침 대비)
+  // 방에 들어가 게임이 시작됐으면 세션 저장 (새로고침 대비)
   useEffect(() => {
-    if (roomCode && screen !== 'join') {
+    if (roomCode && room && room.started) {
       try { localStorage.setItem('crew_session', JSON.stringify({ roomCode })); } catch (e) {}
     }
-  }, [roomCode, screen]);
+    // 시작 화면으로 돌아오면 남은 세션 제거 (새 시작을 막지 않도록)
+    if (screen === 'join') {
+      try { localStorage.removeItem('crew_session'); } catch (e) {}
+    }
+  }, [roomCode, room, screen]);
 
   useEffect(() => {
     if (screen === 'join' || !roomCode) return;
@@ -326,19 +340,24 @@ export default function App() {
     if (!/^\d{4}$/.test(crewPassword)) { setError('암호는 숫자 4자리로 입력해주세요'); return; }
     setError('');
     setBusy(true);
-    // 같은 크루 이름이 이미 있으면 막기
-    const existing = await readCrewSave(crewName);
-    if (existing) { setBusy(false); setError('이미 있는 크루 이름이에요. 이어하기를 쓰거나 다른 이름을 정해주세요'); return; }
-    const code = Math.floor(1000 + Math.random() * 9000).toString();
-    const room0 = {
-      code, hostId: myId, numPlayers: numPlayersInput, started: false,
-      crewName: crewName.trim(), password: crewPassword,
-      members: { [myId]: { name: name.trim(), seat: 0 } },
-      game: null,
-    };
-    await writeRoom(code, room0);
+    try {
+      // 같은 크루 이름이 이미 있으면 막기
+      let existing = null;
+      try { existing = await readCrewSave(crewName); } catch (e) { existing = null; }
+      if (existing) { setBusy(false); setError('이미 있는 크루 이름이에요. 이어하기를 쓰거나 다른 이름을 정해주세요'); return; }
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      const room0 = {
+        code, hostId: myId, numPlayers: numPlayersInput, started: false,
+        crewName: crewName.trim(), password: crewPassword,
+        members: { [myId]: { name: name.trim(), seat: 0 } },
+        game: null,
+      };
+      await writeRoom(code, room0);
+      setRoomCode(code); setRoom(room0); setScreen('lobby');
+    } catch (e) {
+      setError('방 생성에 실패했어요: ' + (e.message || '알 수 없는 오류'));
+    }
     setBusy(false);
-    setRoomCode(code); setRoom(room0); setScreen('lobby');
   };
 
   // 이어하기: 크루 이름 + 암호로 저장된 진행 상황을 새 방으로 복원
@@ -347,22 +366,25 @@ export default function App() {
     if (!crewName.trim() || !/^\d{4}$/.test(crewPassword)) { setError('크루 이름과 4자리 암호를 입력해주세요'); return; }
     setError('');
     setBusy(true);
-    const save = await readCrewSave(crewName);
-    if (!save) { setBusy(false); setError('그 이름의 크루를 찾을 수 없어요'); return; }
-    if (save.password !== crewPassword) { setBusy(false); setError('암호가 틀렸어요'); return; }
-    // 새 방 코드로 복원 (좌석은 비우고 다시 모임)
-    const code = Math.floor(1000 + Math.random() * 9000).toString();
-    const room0 = {
-      code, hostId: myId, numPlayers: save.numPlayers, started: false,
-      crewName: save.crewName, password: save.password,
-      savedGame: save.game, // 게임 시작 시 이 저장본을 복원
-      savedMissionNumber: save.missionNumber || 1,
-      members: { [myId]: { name: name.trim(), seat: 0 } },
-      game: null,
-    };
-    await writeRoom(code, room0);
+    try {
+      const save = await readCrewSave(crewName);
+      if (!save) { setBusy(false); setError('그 이름의 크루를 찾을 수 없어요'); return; }
+      if (save.password !== crewPassword) { setBusy(false); setError('암호가 틀렸어요'); return; }
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      const room0 = {
+        code, hostId: myId, numPlayers: save.numPlayers, started: false,
+        crewName: save.crewName, password: save.password,
+        savedGame: save.game,
+        savedMissionNumber: save.missionNumber || 1,
+        members: { [myId]: { name: name.trim(), seat: 0 } },
+        game: null,
+      };
+      await writeRoom(code, room0);
+      setRoomCode(code); setRoom(room0); setScreen('lobby');
+    } catch (e) {
+      setError('이어하기에 실패했어요: ' + (e.message || '알 수 없는 오류'));
+    }
     setBusy(false);
-    setRoomCode(code); setRoom(room0); setScreen('lobby');
   };
 
   const handleJoin = async () => {
