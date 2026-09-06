@@ -301,6 +301,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [predictInput, setPredictInput] = useState('');
+  const [chatInput, setChatInput] = useState('');
+  const [chatOpen, setChatOpen] = useState(false);
   const ambience = useOceanAmbience();
 
   useEffect(() => {
@@ -507,6 +509,30 @@ export default function App() {
     });
   };
 
+  // 미션 패스(건너뛰기): 성공/실패 상관없이 다음 미션으로
+  const doSkipMission = async () => {
+    if (!window.confirm('이 미션을 패스하고 다음 미션으로 넘어갈까요?')) return;
+    mutate((g) => {
+      const next = (g.missionNumber || 1) + 1;
+      const diff = CAMPAIGN_MISSIONS[Math.min(next - 1, CAMPAIGN_MISSIONS.length - 1)];
+      g.startMission(next, diff);
+    });
+  };
+
+  // 채팅 메시지 전송
+  const sendChat = async () => {
+    const text = chatInput.trim();
+    if (!text) return;
+    setChatInput('');
+    const r = await readRoom(roomCode);
+    if (!r) return;
+    const myName = (r.members && r.members[myId] && r.members[myId].name) || '익명';
+    const msg = { id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: myName, text: text.slice(0, 200), ts: Date.now() };
+    const chat = [...(r.chat || []), msg].slice(-50); // 최근 50개만 유지
+    await writeRoom(roomCode, { ...r, chat });
+    setRoom({ ...r, chat });
+  };
+
   // 대기열(로비)로 돌아가기
   const handleBackToLobby = async () => {
     setBusy(true);
@@ -531,7 +557,7 @@ export default function App() {
     color: '#EAF6F6', fontFamily: "'Space Grotesk', sans-serif",
   };
   const headline = { fontFamily: "'Fraunces', serif", fontWeight: 600 };
-  const fontStyle = `@import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Fraunces:wght@500;600&family=Space+Grotesk:wght@400;500;700&display=swap'); *{box-sizing:border-box;} body{margin:0;} @keyframes floatUp { 0%{transform:translateY(0);opacity:0} 10%{opacity:0.5} 100%{transform:translateY(-320px);opacity:0} }`;
+  const fontStyle = `@import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Fraunces:wght@500;600&family=Space+Grotesk:wght@400;500;700&display=swap'); *{box-sizing:border-box;} body{margin:0;} @keyframes floatUp { 0%{transform:translateY(0);opacity:0} 10%{opacity:0.5} 100%{transform:translateY(-320px);opacity:0} } @media (orientation: landscape) and (max-height: 550px) { .crew-table { height: 240px !important; } .crew-hand { max-height: 34vh !important; } .crew-scroll { padding-top: 8px !important; } }`;
 
   if (!authReady || !myId) {
     return <div style={{ ...pageStyle, display: 'flex', justifyContent: 'center' }}><div style={{ marginTop: 100, color: '#7FA6C2' }}>연결 중...</div></div>;
@@ -715,13 +741,53 @@ export default function App() {
         {ambience.playing ? '🔊' : '🔇'}
       </button>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 10px' }}>
+      {/* 채팅 토글 버튼 */}
+      <button onClick={() => setChatOpen((v) => !v)}
+        style={{ position: 'fixed', top: 10, right: 54, zIndex: 20, width: 36, height: 36, borderRadius: 18, border: '1px solid rgba(120,200,230,0.3)', background: 'rgba(11,42,69,0.85)', color: '#7FBEDA', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        title="채팅">
+        💬{(room.chat && room.chat.length > 0) ? '' : ''}
+      </button>
+
+      {/* 채팅 패널 */}
+      {chatOpen && (
+        <div style={{ position: 'fixed', top: 54, right: 10, zIndex: 25, width: 260, maxWidth: '80vw', height: 340, maxHeight: '60vh', background: 'rgba(8,30,48,0.97)', borderRadius: 14, border: '1px solid rgba(120,200,230,0.25)', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#7FBEDA' }}>💬 채팅</span>
+            <button onClick={() => setChatOpen(false)} style={{ background: 'transparent', border: 'none', color: '#7FA6C2', fontSize: 16, cursor: 'pointer' }}>✕</button>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {(room.chat || []).length === 0 && <div style={{ color: '#4A6E85', fontSize: 12, textAlign: 'center', marginTop: 20 }}>아직 메시지가 없어요</div>}
+            {(room.chat || []).map((m) => {
+              const mine = room.members && room.members[myId] && room.members[myId].name === m.name;
+              return (
+                <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                  {!mine && <div style={{ fontSize: 10, color: '#7FA6C2', marginBottom: 2 }}>{m.name}</div>}
+                  <div style={{ fontSize: 13, padding: '6px 10px', borderRadius: 10, background: mine ? '#2FE6C7' : 'rgba(255,255,255,0.08)', color: mine ? '#05121F' : '#EAF6F6', wordBreak: 'break-word' }}>{m.text}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 6, padding: 10, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }} placeholder="메시지..."
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 9, border: '1px solid rgba(255,255,255,0.15)', background: '#0B2A45', color: '#EAF6F6', outline: 'none', fontSize: 13 }} />
+            <button onClick={sendChat} style={{ padding: '8px 12px', borderRadius: 9, border: 'none', background: '#2FE6C7', color: '#05121F', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>전송</button>
+          </div>
+        </div>
+      )}
+
+      <div className="crew-scroll" style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 10px' }}>
         <div style={{ width: '100%', maxWidth: 480, margin: '0 auto' }}>
           {/* 헤더 */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: '#7FA6C2', marginBottom: 4 }}>
             <span>임무 {view.missionNumber} · 난이도 {view.missionDifficulty}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>방 {roomCode}</span>
+              {room.hostId === myId && (
+                <button onClick={doSkipMission} disabled={busy}
+                  style={{ fontSize: 11, padding: '3px 8px', borderRadius: 7, border: '1px solid rgba(240,184,74,0.4)', background: 'transparent', color: '#F0B84B', cursor: 'pointer' }}>
+                  패스
+                </button>
+              )}
               {room.hostId === myId && (
                 <button onClick={handleBackToLobby} disabled={busy}
                   style={{ fontSize: 11, padding: '3px 8px', borderRadius: 7, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: '#7FA6C2', cursor: 'pointer' }}>
@@ -835,7 +901,7 @@ export default function App() {
                 <div style={{ fontSize: 12, color: '#7FA6C2', marginBottom: 6, textAlign: 'center' }}>
                   {curTrick ? `트릭 ${curTrick.trickIndex} / ${view.lastTrickIndex}` : (view.previousTrick ? `지난 트릭 ${view.previousTrick.trickIndex}` : '트릭')}
                 </div>
-                <div style={{
+                <div className="crew-table" style={{
                   position: 'relative', width: '100%', height: 360, borderRadius: 24, overflow: 'hidden',
                   background: 'linear-gradient(180deg, #0d4a68 0%, #0a3550 40%, #062536 100%)',
                   border: '2px solid rgba(120,200,230,0.15)', boxShadow: 'inset 0 0 60px rgba(0,0,0,0.5)',
@@ -910,7 +976,7 @@ export default function App() {
       </div>
 
       {/* 하단 고정 손패 */}
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', background: '#0A2438', padding: '10px 14px 14px', maxHeight: '44vh', overflowY: 'auto' }}>
+      <div className="crew-hand" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', background: '#0A2438', padding: '10px 14px 14px', maxHeight: '44vh', overflowY: 'auto' }}>
         <div style={{ width: '100%', maxWidth: 480, margin: '0 auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#7FA6C2', marginBottom: 6 }}>
             <span>내 손패 ({myHand.length}장){myTasks.length > 0 ? ` · 내 과제 ${myTasks.length}개` : ''}</span>
