@@ -791,6 +791,12 @@ class Game {
     if (Array.isArray(g.tricks)) {
       g.tricks.forEach((t) => { if (t && !t.plays) t.plays = []; });
     }
+    // taskDeck 내부 배열 복구
+    if (!g.taskDeck) g.taskDeck = { drawPile: [], discardPile: [] };
+    if (!g.taskDeck.drawPile) g.taskDeck.drawPile = [];
+    if (!g.taskDeck.discardPile) g.taskDeck.discardPile = [];
+    if (!g.taskPool) g.taskPool = [];
+    if (!g.taskSelectionOrder) g.taskSelectionOrder = [];
     return g;
   }
 }
