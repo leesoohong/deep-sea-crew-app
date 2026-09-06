@@ -33,6 +33,18 @@ async function writeRoom(code, roomObj) {
   await set(ref(db, `rooms/${code}`), stripUndefined(roomObj));
 }
 
+// 크루 이름을 Firebase 키로 안전하게 변환 (.#$[]/ 및 공백 제거)
+function crewKey(name) {
+  return 'crew_' + name.trim().toLowerCase().replace(/[.#$/\[\]\s]/g, '_').slice(0, 40);
+}
+async function readCrewSave(name) {
+  const snap = await get(ref(db, `crews/${crewKey(name)}`));
+  return snap.exists() ? snap.val() : null;
+}
+async function writeCrewSave(name, data) {
+  await set(ref(db, `crews/${crewKey(name)}`), stripUndefined(data));
+}
+
 // room 저장 형태: { code, hostId, numPlayers, started, members: {playerId: {name, seat}}, game: <Game.toJSON()> }
 
 function loadGame(room) {
@@ -59,6 +71,88 @@ function CardChip({ card, disabled, onClick, size = 'md', dim }) {
       <span style={{ fontSize: 8, marginTop: 2 }}>{isRocket ? '🚀' : info.label}</span>
     </button>
   );
+}
+
+// 심해 몽환 앰비언트 BGM (Web Audio API로 실시간 합성, 파일 불필요)
+function useOceanAmbience() {
+  const ctxRef = React.useRef(null);
+  const nodesRef = React.useRef([]);
+  const [playing, setPlaying] = React.useState(false);
+
+  const start = () => {
+    if (ctxRef.current) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    ctxRef.current = ctx;
+
+    const master = ctx.createGain();
+    master.gain.value = 0.0;
+    master.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 3); // 서서히 페이드인
+    master.connect(ctx.destination);
+
+    // 은은한 로우패스로 심해 먹먹함
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 700;
+    lp.connect(master);
+
+    // 겹치는 저음 드론 (몽환적 화음: 근음 + 5도 + 옥타브)
+    const freqs = [55, 82.4, 110, 164.8]; // A1, E2, A2, E3
+    freqs.forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = 0.12 / (i + 1);
+      // 아주 느린 볼륨 흔들림(LFO)으로 물결 느낌
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.05 + i * 0.02;
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = 0.05;
+      lfo.connect(lfoGain);
+      lfoGain.connect(g.gain);
+      osc.connect(g);
+      g.connect(lp);
+      osc.start();
+      lfo.start();
+      nodesRef.current.push(osc, lfo);
+    });
+
+    // 아주 느리게 오르내리는 고음 "빛줄기" 패드
+    const shimmer = ctx.createOscillator();
+    shimmer.type = 'sine';
+    shimmer.frequency.value = 440;
+    const shimmerGain = ctx.createGain();
+    shimmerGain.gain.value = 0.03;
+    const slowLfo = ctx.createOscillator();
+    slowLfo.frequency.value = 0.03;
+    const slowLfoGain = ctx.createGain();
+    slowLfoGain.gain.value = 60;
+    slowLfo.connect(slowLfoGain);
+    slowLfoGain.connect(shimmer.frequency);
+    shimmer.connect(shimmerGain);
+    shimmerGain.connect(lp);
+    shimmer.start();
+    slowLfo.start();
+    nodesRef.current.push(shimmer, slowLfo);
+
+    setPlaying(true);
+  };
+
+  const stop = () => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    nodesRef.current.forEach((n) => { try { n.stop(); } catch (e) {} });
+    nodesRef.current = [];
+    ctx.close();
+    ctxRef.current = null;
+    setPlaying(false);
+  };
+
+  const toggle = () => { if (playing) stop(); else start(); };
+  React.useEffect(() => () => stop(), []);
+  return { playing, toggle };
 }
 
 // 미션 텍스트를 자리 옆에 붙일 짧은 형태로 요약
@@ -169,10 +263,14 @@ export default function App() {
   const [roomCode, setRoomCode] = useState('');
   const [name, setName] = useState('');
   const [numPlayersInput, setNumPlayersInput] = useState(3);
+  const [crewName, setCrewName] = useState('');
+  const [crewPassword, setCrewPassword] = useState('');
+  const [joinMode, setJoinMode] = useState('new'); // 'new' | 'continue' | 'join'
   const [room, setRoom] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [predictInput, setPredictInput] = useState('');
+  const ambience = useOceanAmbience();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -182,6 +280,32 @@ export default function App() {
     return () => unsub();
   }, []);
 
+  // 새로고침 후 이전에 있던 방으로 자동 복귀
+  useEffect(() => {
+    if (!authReady || !myId) return;
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem('crew_session') || 'null'); } catch (e) { saved = null; }
+    if (!saved || !saved.roomCode) return;
+    (async () => {
+      const r = await readRoom(saved.roomCode);
+      if (r && r.members && r.members[myId]) {
+        setRoomCode(saved.roomCode);
+        setRoom(r);
+        setName(r.members[myId].name || '');
+        setScreen(r.started ? 'game' : 'lobby');
+      } else {
+        localStorage.removeItem('crew_session');
+      }
+    })();
+  }, [authReady, myId]);
+
+  // 방에 들어가 있으면 세션 저장 (새로고침 대비)
+  useEffect(() => {
+    if (roomCode && screen !== 'join') {
+      try { localStorage.setItem('crew_session', JSON.stringify({ roomCode })); } catch (e) {}
+    }
+  }, [roomCode, screen]);
+
   useEffect(() => {
     if (screen === 'join' || !roomCode) return;
     const roomRef = ref(db, `rooms/${roomCode}`);
@@ -190,20 +314,52 @@ export default function App() {
   }, [screen, roomCode]);
 
   useEffect(() => {
-    if (room && room.started && screen === 'lobby') setScreen('game');
+    if (!room) return;
+    if (room.started && screen === 'lobby') setScreen('game');
+    if (!room.started && screen === 'game') setScreen('lobby');
   }, [room, screen]);
 
   // ---------- 로비 액션 ----------
   const handleCreate = async () => {
     if (!name.trim()) { setError('이름을 입력해주세요'); return; }
+    if (!crewName.trim()) { setError('크루 이름을 입력해주세요'); return; }
+    if (!/^\d{4}$/.test(crewPassword)) { setError('암호는 숫자 4자리로 입력해주세요'); return; }
     setError('');
+    setBusy(true);
+    // 같은 크루 이름이 이미 있으면 막기
+    const existing = await readCrewSave(crewName);
+    if (existing) { setBusy(false); setError('이미 있는 크루 이름이에요. 이어하기를 쓰거나 다른 이름을 정해주세요'); return; }
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     const room0 = {
       code, hostId: myId, numPlayers: numPlayersInput, started: false,
+      crewName: crewName.trim(), password: crewPassword,
       members: { [myId]: { name: name.trim(), seat: 0 } },
       game: null,
     };
+    await writeRoom(code, room0);
+    setBusy(false);
+    setRoomCode(code); setRoom(room0); setScreen('lobby');
+  };
+
+  // 이어하기: 크루 이름 + 암호로 저장된 진행 상황을 새 방으로 복원
+  const handleContinue = async () => {
+    if (!name.trim()) { setError('이름을 입력해주세요'); return; }
+    if (!crewName.trim() || !/^\d{4}$/.test(crewPassword)) { setError('크루 이름과 4자리 암호를 입력해주세요'); return; }
+    setError('');
     setBusy(true);
+    const save = await readCrewSave(crewName);
+    if (!save) { setBusy(false); setError('그 이름의 크루를 찾을 수 없어요'); return; }
+    if (save.password !== crewPassword) { setBusy(false); setError('암호가 틀렸어요'); return; }
+    // 새 방 코드로 복원 (좌석은 비우고 다시 모임)
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    const room0 = {
+      code, hostId: myId, numPlayers: save.numPlayers, started: false,
+      crewName: save.crewName, password: save.password,
+      savedGame: save.game, // 게임 시작 시 이 저장본을 복원
+      savedMissionNumber: save.missionNumber || 1,
+      members: { [myId]: { name: name.trim(), seat: 0 } },
+      game: null,
+    };
     await writeRoom(code, room0);
     setBusy(false);
     setRoomCode(code); setRoom(room0); setScreen('lobby');
@@ -236,11 +392,24 @@ export default function App() {
     const seatCount = Object.keys(members).length;
     if (seatCount !== r.numPlayers) { setBusy(false); setError(`${r.numPlayers}명이 모두 모여야 시작할 수 있어요 (현재 ${seatCount}명)`); return; }
 
-    const g = new Game(r.numPlayers, { rescueSignalEnabled: false });
-    Object.entries(members).forEach(([pid, m]) => g.assignSeat(m.seat, pid, m.name));
-    // 캠페인 1번 미션부터 시작
-    const difficulty = CAMPAIGN_MISSIONS[0];
-    g.startMission(1, difficulty);
+    let g;
+    if (r.savedGame) {
+      // 이어하기: 저장된 게임 복원 후, 이번에 모인 사람들에게 좌석 재배정
+      g = Game.fromJSON(r.savedGame);
+      const seatList = Object.entries(members).sort((a, b) => a[1].seat - b[1].seat);
+      seatList.forEach(([pid, m]) => g.assignSeat(m.seat, pid, m.name));
+      // 저장 시점이 미션 종료 상태였다면 다음 미션 새로 시작
+      if (g.phase === 'missionEnd' || !g.phase) {
+        const nextNo = (r.savedMissionNumber || g.missionNumber || 1);
+        const diff = CAMPAIGN_MISSIONS[Math.min(nextNo - 1, CAMPAIGN_MISSIONS.length - 1)];
+        g.startMission(nextNo, diff);
+      }
+    } else {
+      g = new Game(r.numPlayers, { rescueSignalEnabled: false });
+      Object.entries(members).forEach(([pid, m]) => g.assignSeat(m.seat, pid, m.name));
+      const difficulty = CAMPAIGN_MISSIONS[0];
+      g.startMission(1, difficulty);
+    }
     const updated = { ...r, started: true, game: g.toJSON() };
     await writeRoom(roomCode, updated);
     setBusy(false);
@@ -274,11 +443,39 @@ export default function App() {
   const doPassTask = () => mutate((g) => g.passTaskSelection(mySeatOf(g)));
   const doPlayCard = (card) => mutate((g) => g.playCard(mySeatOf(g), card));
   const doCommunicate = (card) => mutate((g) => g.communicate(mySeatOf(g), card));
-  const doNextMission = () => mutate((g) => {
-    const next = g.missionNumber + 1;
-    const diff = CAMPAIGN_MISSIONS[Math.min(next - 1, CAMPAIGN_MISSIONS.length - 1)];
-    g.startMission(next, diff);
-  });
+  const doNextMission = async () => {
+    // 다음 미션으로 넘어가기 전에, 현재 크루 진행상황을 자동 저장
+    const rNow = await readRoom(roomCode);
+    if (rNow && rNow.crewName) {
+      const gNow = loadGame(rNow);
+      if (gNow) {
+        await writeCrewSave(rNow.crewName, {
+          crewName: rNow.crewName, password: rNow.password, numPlayers: rNow.numPlayers,
+          missionNumber: (gNow.missionNumber || 1) + 1, // 다음 미션 번호
+          game: gNow.toJSON(), savedAt: Date.now(),
+        });
+      }
+    }
+    mutate((g) => {
+      const next = g.missionNumber + 1;
+      const diff = CAMPAIGN_MISSIONS[Math.min(next - 1, CAMPAIGN_MISSIONS.length - 1)];
+      g.startMission(next, diff);
+    });
+  };
+
+  // 대기열(로비)로 돌아가기
+  const handleBackToLobby = async () => {
+    setBusy(true);
+    const r = await readRoom(roomCode);
+    if (r) {
+      const updated = { ...r, started: false, game: null };
+      // savedGame 등은 유지
+      await writeRoom(roomCode, updated);
+      setRoom(updated);
+    }
+    setScreen('lobby');
+    setBusy(false);
+  };
   const doRetry = () => mutate((g) => g.retryMission());
   const doPredict = (taskId, value) => mutate((g) => g.submitPrediction(mySeatOf(g), taskId, value));
 
@@ -307,6 +504,13 @@ export default function App() {
       }}>
         <style>{fontStyle}</style>
 
+        {/* BGM 토글 */}
+        <button onClick={ambience.toggle}
+          style={{ position: 'fixed', top: 12, right: 12, zIndex: 10, width: 40, height: 40, borderRadius: 20, border: '1px solid rgba(120,200,230,0.3)', background: 'rgba(11,42,69,0.8)', color: '#7FBEDA', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          title={ambience.playing ? '음악 끄기' : '음악 켜기'}>
+          {ambience.playing ? '🔊' : '🔇'}
+        </button>
+
         {/* 수면 광선 */}
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '60%', pointerEvents: 'none', opacity: 0.35,
           background: 'linear-gradient(100deg, transparent 20%, rgba(120,200,230,0.15) 30%, transparent 40%, rgba(120,200,230,0.12) 55%, transparent 65%, rgba(120,200,230,0.1) 78%, transparent 88%)' }} />
@@ -334,26 +538,66 @@ export default function App() {
 
           {screen === 'join' && (
             <div style={{ background: 'rgba(11,42,69,0.85)', backdropFilter: 'blur(4px)', borderRadius: 16, padding: 22, border: '1px solid rgba(120,200,230,0.15)' }}>
-              <label style={{ fontSize: 13, color: '#7FA6C2' }}>이름</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="닉네임"
-                style={{ width: '100%', marginTop: 6, marginBottom: 16, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: '#0B2A45', color: '#EAF6F6', outline: 'none' }} />
-              <label style={{ fontSize: 13, color: '#7FA6C2' }}>인원 수 (새 방 만들 때)</label>
-              <div style={{ display: 'flex', gap: 8, marginTop: 6, marginBottom: 16 }}>
-                {[3, 4, 5].map((n) => (
-                  <button key={n} onClick={() => setNumPlayersInput(n)}
-                    style={{ flex: 1, padding: 10, borderRadius: 10, border: numPlayersInput === n ? '2px solid #2FE6C7' : '1px solid rgba(255,255,255,0.15)', background: numPlayersInput === n ? 'rgba(47,230,199,0.12)' : '#0B2A45', color: numPlayersInput === n ? '#2FE6C7' : '#EAF6F6', fontWeight: 700, cursor: 'pointer' }}>
-                    {n}명
-                  </button>
+              {/* 모드 탭 */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
+                {[['new', '새 크루'], ['continue', '이어하기'], ['join', '방 참가']].map(([m, label]) => (
+                  <button key={m} onClick={() => { setJoinMode(m); setError(''); }}
+                    style={{ flex: 1, padding: 9, borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                      border: joinMode === m ? '2px solid #2FE6C7' : '1px solid rgba(255,255,255,0.15)',
+                      background: joinMode === m ? 'rgba(47,230,199,0.12)' : '#0B2A45',
+                      color: joinMode === m ? '#2FE6C7' : '#7FA6C2' }}>{label}</button>
                 ))}
               </div>
-              <button onClick={handleCreate} disabled={busy} style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: '#2FE6C7', color: '#05121F', fontWeight: 700, fontSize: 15, marginBottom: 18, cursor: 'pointer' }}>새 방 만들기</button>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#4A6E85', fontSize: 12, marginBottom: 16 }}>
-                <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }} />또는<div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }} />
-              </div>
-              <label style={{ fontSize: 13, color: '#7FA6C2' }}>방 코드로 참가</label>
-              <input value={roomCodeInput} onChange={(e) => setRoomCodeInput(e.target.value)} placeholder="4자리 코드"
-                style={{ width: '100%', marginTop: 6, marginBottom: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: '#0B2A45', color: '#EAF6F6', outline: 'none' }} />
-              <button onClick={handleJoin} disabled={busy} style={{ width: '100%', padding: 12, borderRadius: 10, border: '1px solid #2FE6C7', background: 'transparent', color: '#2FE6C7', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>참가하기</button>
+
+              <label style={{ fontSize: 13, color: '#7FA6C2' }}>내 이름</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="닉네임"
+                style={{ width: '100%', marginTop: 6, marginBottom: 16, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: '#0B2A45', color: '#EAF6F6', outline: 'none' }} />
+
+              {/* 새 크루 */}
+              {joinMode === 'new' && (
+                <>
+                  <label style={{ fontSize: 13, color: '#7FA6C2' }}>크루 이름</label>
+                  <input value={crewName} onChange={(e) => setCrewName(e.target.value)} placeholder="예: 심해탐험대"
+                    style={{ width: '100%', marginTop: 6, marginBottom: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: '#0B2A45', color: '#EAF6F6', outline: 'none' }} />
+                  <label style={{ fontSize: 13, color: '#7FA6C2' }}>암호 (숫자 4자리 · 이어하기용)</label>
+                  <input value={crewPassword} onChange={(e) => setCrewPassword(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="****" inputMode="numeric"
+                    style={{ width: '100%', marginTop: 6, marginBottom: 16, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: '#0B2A45', color: '#EAF6F6', outline: 'none', letterSpacing: 4 }} />
+                  <label style={{ fontSize: 13, color: '#7FA6C2' }}>인원 수</label>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 6, marginBottom: 16 }}>
+                    {[3, 4, 5].map((n) => (
+                      <button key={n} onClick={() => setNumPlayersInput(n)}
+                        style={{ flex: 1, padding: 10, borderRadius: 10, border: numPlayersInput === n ? '2px solid #2FE6C7' : '1px solid rgba(255,255,255,0.15)', background: numPlayersInput === n ? 'rgba(47,230,199,0.12)' : '#0B2A45', color: numPlayersInput === n ? '#2FE6C7' : '#EAF6F6', fontWeight: 700, cursor: 'pointer' }}>{n}명</button>
+                    ))}
+                  </div>
+                  <button onClick={handleCreate} disabled={busy} style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: '#2FE6C7', color: '#05121F', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>새 크루로 시작</button>
+                </>
+              )}
+
+              {/* 이어하기 */}
+              {joinMode === 'continue' && (
+                <>
+                  <label style={{ fontSize: 13, color: '#7FA6C2' }}>크루 이름</label>
+                  <input value={crewName} onChange={(e) => setCrewName(e.target.value)} placeholder="저장했던 크루 이름"
+                    style={{ width: '100%', marginTop: 6, marginBottom: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: '#0B2A45', color: '#EAF6F6', outline: 'none' }} />
+                  <label style={{ fontSize: 13, color: '#7FA6C2' }}>암호 (숫자 4자리)</label>
+                  <input value={crewPassword} onChange={(e) => setCrewPassword(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="****" inputMode="numeric"
+                    style={{ width: '100%', marginTop: 6, marginBottom: 16, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: '#0B2A45', color: '#EAF6F6', outline: 'none', letterSpacing: 4 }} />
+                  <button onClick={handleContinue} disabled={busy} style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: '#2FE6C7', color: '#05121F', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>이어하기</button>
+                  <div style={{ fontSize: 11, color: '#4A6E85', marginTop: 10 }}>저장된 다음 미션부터 다시 시작해요. 참가자는 로비에서 다시 모이면 돼요.</div>
+                </>
+              )}
+
+              {/* 방 참가 */}
+              {joinMode === 'join' && (
+                <>
+                  <label style={{ fontSize: 13, color: '#7FA6C2' }}>방 코드</label>
+                  <input value={roomCodeInput} onChange={(e) => setRoomCodeInput(e.target.value)} placeholder="4자리 코드"
+                    style={{ width: '100%', marginTop: 6, marginBottom: 16, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: '#0B2A45', color: '#EAF6F6', outline: 'none' }} />
+                  <button onClick={handleJoin} disabled={busy} style={{ width: '100%', padding: 12, borderRadius: 10, border: '1px solid #2FE6C7', background: 'transparent', color: '#2FE6C7', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>방 참가하기</button>
+                  <div style={{ fontSize: 11, color: '#4A6E85', marginTop: 10 }}>친구가 만든 방 코드를 입력해 같은 크루에 합류해요.</div>
+                </>
+              )}
+
               {error && <div style={{ color: '#FF6FA5', fontSize: 13, marginTop: 14 }}>{error}</div>}
             </div>
           )}
@@ -361,6 +605,7 @@ export default function App() {
           {screen === 'lobby' && room && (
             <div style={{ background: 'rgba(11,42,69,0.85)', backdropFilter: 'blur(4px)', borderRadius: 16, padding: 22, border: '1px solid rgba(120,200,230,0.15)' }}>
               <div style={{ textAlign: 'center', marginBottom: 18 }}>
+                {room.crewName && <div style={{ ...headline, fontSize: 18, color: '#7FBEDA', marginBottom: 8 }}>🚩 {room.crewName}{room.savedGame ? ` · 미션 ${room.savedMissionNumber}부터` : ''}</div>}
                 <div style={{ color: '#7FA6C2', fontSize: 13 }}>방 코드</div>
                 <div style={{ ...headline, fontSize: 40, color: '#2FE6C7', letterSpacing: 4 }}>{roomCode}</div>
                 <div style={{ color: '#4A6E85', fontSize: 12, marginTop: 4 }}>{room.numPlayers}명이 모여야 시작해요</div>
@@ -416,15 +661,29 @@ export default function App() {
     <div style={{ ...pageStyle, display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <style>{fontStyle}</style>
 
+      <button onClick={ambience.toggle}
+        style={{ position: 'fixed', top: 10, right: 10, zIndex: 20, width: 36, height: 36, borderRadius: 18, border: '1px solid rgba(120,200,230,0.3)', background: 'rgba(11,42,69,0.85)', color: '#7FBEDA', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        title={ambience.playing ? '음악 끄기' : '음악 켜기'}>
+        {ambience.playing ? '🔊' : '🔇'}
+      </button>
+
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 10px' }}>
         <div style={{ width: '100%', maxWidth: 480, margin: '0 auto' }}>
           {/* 헤더 */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#7FA6C2', marginBottom: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: '#7FA6C2', marginBottom: 4 }}>
             <span>임무 {view.missionNumber} · 난이도 {view.missionDifficulty}</span>
-            <span>방 {roomCode}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>방 {roomCode}</span>
+              {room.hostId === myId && (
+                <button onClick={handleBackToLobby} disabled={busy}
+                  style={{ fontSize: 11, padding: '3px 8px', borderRadius: 7, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: '#7FA6C2', cursor: 'pointer' }}>
+                  대기열로
+                </button>
+              )}
+            </div>
           </div>
           <div style={{ textAlign: 'center', fontSize: 11, color: '#4A6E85', marginBottom: 10 }}>
-            ⚓ 선장: {captainName}{view.attemptNumber > 1 ? ` · ${view.attemptNumber}번째 시도` : ''}
+            {room.crewName ? `🚩 ${room.crewName} · ` : ''}⚓ 선장: {captainName}{view.attemptNumber > 1 ? ` · ${view.attemptNumber}번째 시도` : ''}
           </div>
 
           {/* 미션 목표 리스트 */}
